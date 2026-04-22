@@ -1,34 +1,49 @@
 import { NextResponse } from "next/server";
-import { entitlementFromWebhookPayload, verifyLemonWebhookSignature } from "@/lib/lemonsqueezy";
-import { upsertEntitlement } from "@/lib/database";
+
+import { recordCompletedStripeCheckout } from "@/lib/database";
+import { verifyStripeSignature } from "@/lib/lemonsqueezy";
+
+type StripeCheckoutCompletedEvent = {
+  type: "checkout.session.completed";
+  data?: {
+    object?: {
+      id?: string;
+      customer_email?: string | null;
+      customer_details?: {
+        email?: string | null;
+      };
+      created?: number;
+    };
+  };
+};
 
 export async function POST(request: Request) {
-  const rawBody = await request.text();
-  const signature = request.headers.get("x-signature");
+  const body = await request.text();
 
-  if (!verifyLemonWebhookSignature(rawBody, signature)) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  const isValidSignature = verifyStripeSignature({
+    body,
+    stripeSignatureHeader: request.headers.get("stripe-signature"),
+  });
+
+  if (!isValidSignature) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  let payload: unknown;
+  const event = JSON.parse(body) as StripeCheckoutCompletedEvent;
 
-  try {
-    payload = JSON.parse(rawBody);
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
-  }
+  if (event.type === "checkout.session.completed") {
+    const session = event.data?.object;
+    const sessionId = session?.id;
 
-  const entitlement = entitlementFromWebhookPayload(payload);
-
-  if (entitlement) {
-    await upsertEntitlement({
-      token: entitlement.token,
-      type: entitlement.type,
-      scansRemaining: entitlement.scansRemaining,
-      expiresAt: entitlement.expiresAt,
-      orderId: entitlement.orderId,
-      customerEmail: entitlement.customerEmail,
-    });
+    if (sessionId) {
+      await recordCompletedStripeCheckout({
+        sessionId,
+        email: session.customer_details?.email ?? session.customer_email ?? null,
+        paidAt: session.created
+          ? new Date(session.created * 1000).toISOString()
+          : undefined,
+      });
+    }
   }
 
   return NextResponse.json({ received: true });

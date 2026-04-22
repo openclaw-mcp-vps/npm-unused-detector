@@ -1,174 +1,111 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
-export type CheckoutPlan = "single" | "monthly";
+const ACCESS_COOKIE_TTL_SECONDS = 60 * 60 * 24 * 30;
 
-export interface AccessCookiePayload {
-  token: string;
+export const ACCESS_COOKIE_NAME = "nud_paid_access";
+
+type AccessPayload = {
   exp: number;
-}
+  email: string | null;
+};
 
-interface LemonWebhookPayload {
-  meta?: {
-    event_name?: string;
-    custom_data?: Record<string, unknown>;
-  };
-  data?: {
-    id?: string;
-    attributes?: {
-      customer_email?: string;
-      custom_data?: Record<string, unknown>;
-      first_order_item?: {
-        product_name?: string;
-        variant_name?: string;
-      };
-      renews_at?: string;
-      ends_at?: string;
-    };
-  };
-}
-
-function getSigningSecret() {
-  return process.env.LEMON_SQUEEZY_WEBHOOK_SECRET ?? "local-dev-secret";
-}
-
-function base64UrlEncode(value: string) {
+function toBase64Url(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
 }
 
-function base64UrlDecode(value: string) {
+function fromBase64Url(value: string): string {
   return Buffer.from(value, "base64url").toString("utf8");
 }
 
-function signValue(value: string) {
-  return createHmac("sha256", getSigningSecret()).update(value).digest("base64url");
+function getCookieSecret(): string {
+  return process.env.STRIPE_WEBHOOK_SECRET || "development-insecure-secret";
 }
 
-export function createPurchaseToken() {
-  return randomBytes(16).toString("hex");
+function sign(value: string, secret: string): string {
+  return createHmac("sha256", secret).update(value).digest("base64url");
 }
 
-export function createAccessCookie(payload: AccessCookiePayload) {
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  const signature = signValue(encodedPayload);
-  return `${encodedPayload}.${signature}`;
+export function createAccessCookie(email: string | null): {
+  value: string;
+  maxAge: number;
+} {
+  const payload: AccessPayload = {
+    exp: Math.floor(Date.now() / 1000) + ACCESS_COOKIE_TTL_SECONDS,
+    email,
+  };
+
+  const encoded = toBase64Url(JSON.stringify(payload));
+  const signature = sign(encoded, getCookieSecret());
+
+  return {
+    value: `${encoded}.${signature}`,
+    maxAge: ACCESS_COOKIE_TTL_SECONDS,
+  };
 }
 
-export function readAccessCookie(cookieValue: string | undefined | null) {
-  if (!cookieValue) {
-    return null;
-  }
+export function verifyAccessCookie(value: string | undefined): boolean {
+  if (!value) return false;
 
-  const [encodedPayload, signature] = cookieValue.split(".");
-  if (!encodedPayload || !signature) {
-    return null;
-  }
+  const [encoded, providedSig] = value.split(".");
+  if (!encoded || !providedSig) return false;
 
-  const expectedSignature = signValue(encodedPayload);
+  const expectedSig = sign(encoded, getCookieSecret());
 
-  if (signature.length !== expectedSignature.length) {
-    return null;
-  }
+  const providedBuffer = Buffer.from(providedSig);
+  const expectedBuffer = Buffer.from(expectedSig);
 
-  const isValid = timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
-  if (!isValid) {
-    return null;
+  if (
+    providedBuffer.byteLength !== expectedBuffer.byteLength ||
+    !timingSafeEqual(providedBuffer, expectedBuffer)
+  ) {
+    return false;
   }
 
   try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as AccessCookiePayload;
-
-    if (!payload.token || typeof payload.exp !== "number") {
-      return null;
-    }
-
-    if (payload.exp < Math.floor(Date.now() / 1000)) {
-      return null;
-    }
-
-    return payload;
+    const payload = JSON.parse(fromBase64Url(encoded)) as AccessPayload;
+    return payload.exp > Math.floor(Date.now() / 1000);
   } catch {
-    return null;
+    return false;
   }
 }
 
-export function verifyLemonWebhookSignature(rawBody: string, signature: string | null) {
-  if (!signature) {
-    return false;
+export function verifyStripeSignature(params: {
+  body: string;
+  stripeSignatureHeader: string | null;
+}): boolean {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) {
+    throw new Error("Missing STRIPE_WEBHOOK_SECRET");
   }
 
-  const digest = createHmac("sha256", getSigningSecret()).update(rawBody).digest("hex");
+  const signatureHeader = params.stripeSignatureHeader;
+  if (!signatureHeader) return false;
 
-  if (digest.length !== signature.length) {
-    return false;
-  }
-
-  return timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
-}
-
-export function buildCheckoutUrl(options: {
-  plan: CheckoutPlan;
-  token: string;
-  origin: string;
-}) {
-  const configuredProduct = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_ID;
-  if (!configuredProduct) {
-    throw new Error("NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_ID is not configured");
-  }
-
-  const baseUrl = configuredProduct.startsWith("http")
-    ? new URL(configuredProduct)
-    : new URL(`https://checkout.lemonsqueezy.com/buy/${configuredProduct}`);
-
-  baseUrl.searchParams.set("checkout[custom][scan_token]", options.token);
-  baseUrl.searchParams.set("checkout[custom][plan]", options.plan);
-  baseUrl.searchParams.set("checkout[embed]", "1");
-  baseUrl.searchParams.set(
-    "checkout[success_url]",
-    `${options.origin}/scan?checkout=success&token=${options.token}`,
+  const values = Object.fromEntries(
+    signatureHeader.split(",").map((entry) => {
+      const [key, value] = entry.split("=");
+      return [key, value];
+    })
   );
 
-  const storeId = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_STORE_ID;
-  if (storeId) {
-    baseUrl.searchParams.set("store", storeId);
+  const timestamp = values.t;
+  const signature = values.v1;
+
+  if (!timestamp || !signature) return false;
+
+  const age = Math.abs(Date.now() / 1000 - Number(timestamp));
+  if (!Number.isFinite(age) || age > 5 * 60) {
+    return false;
   }
 
-  return baseUrl.toString();
-}
+  const signedPayload = `${timestamp}.${params.body}`;
+  const computed = createHmac("sha256", secret)
+    .update(signedPayload)
+    .digest("hex");
 
-export function entitlementFromWebhookPayload(rawPayload: unknown) {
-  const payload = rawPayload as LemonWebhookPayload;
-  const eventName = payload.meta?.event_name ?? "";
+  const sigA = Buffer.from(signature);
+  const sigB = Buffer.from(computed);
+  if (sigA.byteLength !== sigB.byteLength) return false;
 
-  const customData = {
-    ...(payload.data?.attributes?.custom_data ?? {}),
-    ...(payload.meta?.custom_data ?? {}),
-  };
-
-  const tokenCandidate = customData.scan_token ?? customData.scanToken;
-  if (typeof tokenCandidate !== "string" || !tokenCandidate) {
-    return null;
-  }
-
-  const explicitPlan = customData.plan;
-  const productName = `${payload.data?.attributes?.first_order_item?.product_name ?? ""} ${
-    payload.data?.attributes?.first_order_item?.variant_name ?? ""
-  }`.toLowerCase();
-
-  const isSubscription =
-    explicitPlan === "monthly" ||
-    eventName.includes("subscription") ||
-    /(subscription|monthly|unlimited)/.test(productName);
-
-  const renewsAt = payload.data?.attributes?.renews_at;
-  const endsAt = payload.data?.attributes?.ends_at;
-
-  return {
-    token: tokenCandidate,
-    type: isSubscription ? ("subscription" as const) : ("single" as const),
-    scansRemaining: isSubscription ? null : 1,
-    expiresAt: isSubscription ? renewsAt ?? endsAt ?? null : null,
-    orderId: payload.data?.id,
-    customerEmail: payload.data?.attributes?.customer_email,
-    eventName,
-  };
+  return timingSafeEqual(sigA, sigB);
 }

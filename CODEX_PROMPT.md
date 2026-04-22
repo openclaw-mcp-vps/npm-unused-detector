@@ -11,26 +11,24 @@ NICHE: devtools
 PRICE: $$3 per scan, $12/mo unlimited/mo
 
 ARCHITECTURE SPEC:
-Next.js app with file upload/GitHub integration that performs AST analysis on JavaScript/TypeScript files to detect unused dependencies. Uses Lemon Squeezy for pay-per-scan and subscription billing with results displayed in an interactive dashboard.
+A Next.js web app that analyzes JavaScript/TypeScript projects by parsing AST to find unused dependencies. Users upload files or provide GitHub URLs, the backend scans imports/requires against package.json deps, and returns a clean removal list with size savings.
 
 PLANNED FILES:
 - app/page.tsx
 - app/scan/page.tsx
-- app/results/[id]/page.tsx
-- app/api/scan/route.ts
+- app/api/analyze/route.ts
 - app/api/github/route.ts
 - app/api/webhooks/lemonsqueezy/route.ts
-- lib/ast-analyzer.ts
-- lib/dependency-checker.ts
-- lib/github-client.ts
+- components/FileUpload.tsx
+- components/ResultsDisplay.tsx
+- components/PricingCards.tsx
+- lib/ast-parser.ts
+- lib/dependency-analyzer.ts
+- lib/github-fetcher.ts
 - lib/lemonsqueezy.ts
 - lib/database.ts
-- components/file-upload.tsx
-- components/github-input.tsx
-- components/results-table.tsx
-- components/pricing-card.tsx
 
-DEPENDENCIES: next, @next/font, tailwindcss, @tailwindcss/forms, typescript, @types/node, prisma, @prisma/client, @lemonsqueezy/lemonsqueezy.js, @babel/parser, @babel/traverse, @babel/types, acorn, acorn-walk, jszip, octokit, zod, react-dropzone, lucide-react
+DEPENDENCIES: next, tailwindcss, @typescript-eslint/parser, @babel/parser, @babel/traverse, acorn, acorn-walk, prisma, @prisma/client, lemonsqueezy.js, octokit, jszip, semver, zod
 
 REQUIREMENTS:
 - Next.js 15 with App Router (app/ directory)
@@ -38,7 +36,7 @@ REQUIREMENTS:
 - Tailwind CSS v4
 - shadcn/ui components (npx shadcn@latest init, then add needed components)
 - Dark theme ONLY — background #0d1117, no light mode
-- Lemon Squeezy checkout overlay for payments
+- Stripe Payment Link for payments (hosted checkout — use the URL directly as the Buy button href)
 - Landing page that converts: hero, problem, solution, pricing, FAQ
 - The actual tool/feature behind a paywall (cookie-based access after purchase)
 - Mobile responsive
@@ -58,9 +56,13 @@ REQUIREMENTS:
   to package.json dependencies and re-run npm install + npm run build until it passes.
 
 ENVIRONMENT VARIABLES (create .env.example):
-- NEXT_PUBLIC_LEMON_SQUEEZY_STORE_ID
-- NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_ID
-- LEMON_SQUEEZY_WEBHOOK_SECRET
+- NEXT_PUBLIC_STRIPE_PAYMENT_LINK  (full URL, e.g. https://buy.stripe.com/test_XXX)
+- NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY  (pk_test_... or pk_live_...)
+- STRIPE_WEBHOOK_SECRET  (set when webhook is wired)
+
+BUY BUTTON RULE: the Buy button's href MUST be `process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK`
+used as-is — do NOT construct URLs from a product ID, do NOT prepend any base URL,
+do NOT wrap it in an embed iframe. The link opens Stripe's hosted checkout directly.
 
 After creating all files:
 1. Run: npm install

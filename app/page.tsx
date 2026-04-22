@@ -1,159 +1,207 @@
 import Link from "next/link";
-import { ArrowRight, GitBranch, ScanLine, UploadCloud, Zap } from "lucide-react";
-import { PricingCard } from "@/components/pricing-card";
-import { Badge } from "@/components/ui/badge";
+import { ArrowRight, CheckCircle2, Clock3, FolderSearch, Zap } from "lucide-react";
 
-const faqs = [
+import { PricingCards } from "@/components/PricingCards";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+const painPoints = [
+  {
+    title: "CLI noise",
+    description:
+      "Most dependency tools over-report and force manual triage across false positives.",
+    icon: FolderSearch,
+  },
+  {
+    title: "Slow cleanups",
+    description:
+      "Large repos mean long scripts and stale reports that never become actionable.",
+    icon: Clock3,
+  },
+  {
+    title: "Shipping risk",
+    description:
+      "Unused packages increase attack surface and bloat your install footprint.",
+    icon: Zap,
+  },
+];
+
+const faqItems = [
   {
     question: "How is this different from depcheck?",
     answer:
-      "depcheck often flags noise in modern TS/Next projects. NPM Unused Detector parses your actual AST imports and keeps build-tool exceptions explicit so the output is cleaner and faster to act on.",
+      "This scanner uses multi-parser AST extraction and returns a focused removal list with size estimates and uninstall commands, instead of broad CLI logs.",
   },
   {
-    question: "What can I upload?",
+    question: "What input formats are supported?",
     answer:
-      "Use either a public GitHub repo URL or upload package.json plus your source folder as direct files or a zip. JavaScript and TypeScript files are supported.",
+      "You can scan a public GitHub repo URL, upload package.json with a project zip, or upload package.json with a source folder.",
   },
   {
-    question: "Do you store my code?",
+    question: "How does the paywall work?",
     answer:
-      "Scans are stored as summarized results and import metadata so you can revisit reports. Raw repository uploads are processed server-side for analysis only.",
+      "After a successful Stripe checkout, your webhook stores the completed session and /api/access/claim sets a signed HTTP-only cookie to unlock scans.",
   },
   {
-    question: "What if my project has special runtime loading?",
+    question: "Can this handle TypeScript + JSX mixed codebases?",
     answer:
-      "You still get a strong default signal. For dynamic plugin systems, treat the removable list as a review queue before deleting dependencies.",
+      "Yes. The parser stack covers JS, TS, JSX, and TSX with fallback parsers for tough files.",
   },
 ];
 
 export default function HomePage() {
+  const paymentLink = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK;
+
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_10%_10%,rgba(16,185,129,0.12),transparent_35%),radial-gradient(circle_at_85%_20%,rgba(56,189,248,0.08),transparent_40%),#0d1117]">
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <header className="rounded-2xl border border-slate-800 bg-slate-950/70 p-8 md:p-12">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Badge>NPM Unused Detector</Badge>
-            <Badge variant="muted">Built for solo dev velocity</Badge>
-          </div>
-          <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-slate-50 md:text-5xl">
-            Scan your `package.json` against real imports and remove dead npm weight in minutes.
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-16 px-6 py-12 sm:px-8 lg:px-12">
+      <section className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <div className="space-y-6" data-animation="fade-up">
+          <Badge variant="secondary" className="w-fit">
+            Devtools for indie teams
+          </Badge>
+          <h1 className="max-w-xl text-4xl font-bold tracking-tight sm:text-5xl">
+            NPM Unused Detector
+            <span className="block text-accent">
+              Scan package.json for deps you never import.
+            </span>
           </h1>
-          <p className="mt-5 max-w-2xl text-lg text-slate-300">
-            Paste a GitHub URL or upload package.json + source files. We run AST import analysis, cross-reference
-            dependencies and devDependencies, and produce a safe cleanup list with estimated KB savings.
+          <p className="max-w-2xl text-lg text-muted">
+            Paste a GitHub URL or upload package.json + source files. We AST-scan every import,
+            compare with your dependencies, and return a clean removal list with estimated size savings.
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link
-              href="/scan"
-              className="inline-flex items-center rounded-md bg-emerald-500 px-4 py-2 font-medium text-slate-950 transition hover:bg-emerald-400"
-            >
-              Start a scan
-              <ArrowRight className="ml-2 size-4" />
+          <div className="flex flex-wrap gap-3">
+            <Link href="/scan" className={cn(buttonVariants({ size: "lg" }))}>
+              Open Scanner
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
-            <a href="#pricing" className="inline-flex items-center rounded-md border border-slate-700 px-4 py-2 text-slate-200 hover:bg-slate-900">
-              View pricing
+            <a
+              href={paymentLink}
+              target="_blank"
+              rel="noreferrer"
+              className={cn(buttonVariants({ size: "lg", variant: "outline" }))}
+            >
+              Buy Access
             </a>
           </div>
-        </header>
+        </div>
 
-        <section className="mt-8 grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
-            <UploadCloud className="size-5 text-emerald-300" />
-            <h2 className="mt-4 text-lg font-semibold text-slate-100">Upload or GitHub</h2>
-            <p className="mt-2 text-sm text-slate-300">
-              Supports direct upload or public repository URLs, so cleanup starts where your project already lives.
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
-            <ScanLine className="size-5 text-sky-300" />
-            <h2 className="mt-4 text-lg font-semibold text-slate-100">AST-based import scan</h2>
-            <p className="mt-2 text-sm text-slate-300">
-              Parses JS/TS source trees directly, reducing false positives from config-heavy toolchains.
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
-            <Zap className="size-5 text-amber-300" />
-            <h2 className="mt-4 text-lg font-semibold text-slate-100">Actionable cleanup list</h2>
-            <p className="mt-2 text-sm text-slate-300">
-              Get a prioritized removable list with estimated package size savings so you can cut bloat confidently.
-            </p>
-          </div>
-        </section>
-
-        <section className="mt-10 rounded-2xl border border-slate-800 bg-slate-950/70 p-8">
-          <h2 className="text-2xl font-semibold text-slate-50">Why indie developers pay for this</h2>
-          <div className="mt-5 grid gap-6 md:grid-cols-2">
-            <div>
-              <h3 className="text-lg font-medium text-slate-100">The problem</h3>
-              <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-300">
-                <li>Projects accumulate stale deps after spikes, pivots, and template experiments.</li>
-                <li>CLI output is often noisy, so teams postpone cleanup until package size hurts CI and install time.</li>
-                <li>Dependency debt makes upgrades riskier because no one trusts what can be removed.</li>
-              </ul>
+        <Card className="overflow-hidden border-accent/30">
+          <CardHeader>
+            <CardTitle>What you get in one scan</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-border bg-[#101722] p-4">
+              <p className="text-xs text-muted">UNUSED PACKAGE FINDINGS</p>
+              <p className="mt-1 text-2xl font-semibold text-accent">7 candidates</p>
             </div>
-            <div>
-              <h3 className="text-lg font-medium text-slate-100">The solution</h3>
-              <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-300">
-                <li>Fast hosted scan across your app code using parser-backed import detection.</li>
-                <li>Visual dependency diff grouped by `dependencies` and `devDependencies`.
+            <div className="rounded-lg border border-border bg-[#101722] p-4">
+              <p className="text-xs text-muted">ESTIMATED UNPACKED SIZE SAVED</p>
+              <p className="mt-1 text-2xl font-semibold">2.3 MB</p>
+            </div>
+            <div className="rounded-lg border border-border bg-[#101722] p-4">
+              <p className="text-xs text-muted">READY TO RUN</p>
+              <code className="mt-1 block text-sm text-muted">
+                npm uninstall left-pad chalk lodash-es
+              </code>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="space-y-6">
+        <h2 className="text-3xl font-semibold">The problem with npm bloat</h2>
+        <div className="grid gap-4 md:grid-cols-3">
+          {painPoints.map((item) => (
+            <Card key={item.title}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <item.icon className="h-5 w-5 text-accent" />
+                  {item.title}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted">{item.description}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-6">
+        <h2 className="text-3xl font-semibold">Why this tool works</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardContent className="pt-6">
+              <ul className="space-y-3 text-sm text-muted">
+                <li className="flex gap-2">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-accent" />
+                  AST parsing across JS, JSX, TS, and TSX for accurate import detection.
                 </li>
-                <li>Pay-per-scan for one-offs or monthly unlimited for continuous hygiene.</li>
+                <li className="flex gap-2">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-accent" />
+                  Runtime and dev dependency breakdown with one-click uninstall commands.
+                </li>
+                <li className="flex gap-2">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-accent" />
+                  Fast hosted workflow instead of CLI setup friction.
+                </li>
               </ul>
-            </div>
-          </div>
-        </section>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted">
+                Built for solo developers who move quickly and want clean dependency graphs before
+                every deploy. It fits side projects, client repos, and startup codebases where every
+                build minute matters.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
-        <section id="pricing" className="mt-10">
-          <div className="mb-5 flex items-center gap-2">
-            <GitBranch className="size-5 text-emerald-300" />
-            <h2 className="text-2xl font-semibold text-slate-50">Pricing</h2>
-          </div>
-          <div className="grid gap-5 md:grid-cols-2">
-            <PricingCard
-              plan="single"
-              title="Single Scan"
-              description="Ideal for one cleanup sprint"
-              price="$3"
-              cadence="per scan"
-              features={[
-                "1 full dependency scan",
-                "AST import cross-reference",
-                "Removable package list",
-                "Estimated KB savings",
-              ]}
-              ctaLabel="Buy single scan"
-            />
-            <PricingCard
-              plan="monthly"
-              title="Unlimited"
-              description="For active repos and recurring cleanup"
-              price="$12"
-              cadence="per month"
-              features={[
-                "Unlimited scans",
-                "GitHub + upload workflows",
-                "Always-on cleanup baseline",
-                "Best value for weekly refactors",
-              ]}
-              highlight
-              ctaLabel="Start unlimited"
-            />
-          </div>
-          <p className="mt-3 text-xs text-slate-400">Secure checkout is handled through Lemon Squeezy overlay.</p>
-        </section>
+      <section id="pricing" className="space-y-6">
+        <h2 className="text-3xl font-semibold">Pricing</h2>
+        <PricingCards />
+      </section>
 
-        <section className="mt-10 rounded-2xl border border-slate-800 bg-slate-950/70 p-8">
-          <h2 className="text-2xl font-semibold text-slate-50">FAQ</h2>
-          <div className="mt-5 space-y-4">
-            {faqs.map((faq) => (
-              <article key={faq.question} className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-                <h3 className="font-medium text-slate-100">{faq.question}</h3>
-                <p className="mt-1 text-sm text-slate-300">{faq.answer}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
+      <section className="space-y-6">
+        <h2 className="text-3xl font-semibold">FAQ</h2>
+        <div className="grid gap-4">
+          {faqItems.map((item) => (
+            <Card key={item.question}>
+              <CardHeader>
+                <CardTitle className="text-lg">{item.question}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted">{item.answer}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-gradient-to-r from-surface to-[#142030] p-8 text-center">
+        <h2 className="text-2xl font-semibold">Stop shipping dependency dead weight</h2>
+        <p className="mt-3 text-muted">
+          Run your first scan in minutes and keep your package graph lean on every release.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+          <Link href="/scan" className={cn(buttonVariants({ size: "lg" }))}>
+            Scan a Project
+          </Link>
+          <a
+            href={paymentLink}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(buttonVariants({ size: "lg", variant: "outline" }))}
+          >
+            Buy Access
+          </a>
+        </div>
+      </section>
     </main>
   );
 }

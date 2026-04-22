@@ -1,30 +1,41 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetBrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+  display: "swap",
 });
+
+const siteUrl = "https://npm-unused-detector.com";
 
 export const metadata: Metadata = {
-  title: "NPM Unused Detector",
-  description:
-    "Scan package.json against your source imports, find removable dependencies, and estimate package weight savings in seconds.",
-  metadataBase: new URL("https://npm-unused-detector.com"),
-  alternates: {
-    canonical: "/",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "NPM Unused Detector",
+    template: "%s | NPM Unused Detector",
   },
+  description:
+    "Scan package.json against your real imports and remove dead dependencies fast. Upload a project or paste a GitHub URL.",
+  keywords: [
+    "unused npm dependencies",
+    "package.json analyzer",
+    "dependency cleanup",
+    "nextjs devtools",
+    "javascript ast",
+  ],
   openGraph: {
     title: "NPM Unused Detector",
     description:
-      "Paste a GitHub URL or upload package.json + src to instantly find unused npm dependencies.",
-    url: "https://npm-unused-detector.com",
+      "Find unused dependencies in minutes with AST-accurate scanning and a clear removal plan.",
+    url: siteUrl,
     siteName: "NPM Unused Detector",
     type: "website",
   },
@@ -32,7 +43,11 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "NPM Unused Detector",
     description:
-      "Fast, visual dependency cleanup for solo developers shipping Node apps.",
+      "Upload your project or paste a GitHub repo and get a dependency cleanup report instantly.",
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -42,10 +57,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} bg-[#0d1117] text-slate-100`}>
-        {children}
-      </body>
+    <html
+      lang="en"
+      className={`${spaceGrotesk.variable} ${jetBrainsMono.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <body className="min-h-full">{children}</body>
     </html>
   );
 }

@@ -1,182 +1,76 @@
-import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { DependencyReport } from "@/lib/dependency-checker";
 
-export type EntitlementType = "single" | "subscription";
+type SessionRecord = {
+  sessionId: string;
+  email: string | null;
+  paidAt: string;
+};
 
-export interface Entitlement {
-  token: string;
-  type: EntitlementType;
-  scansRemaining: number | null;
-  expiresAt: string | null;
-  orderId?: string;
-  customerEmail?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+type DataStore = {
+  stripeSessions: Record<string, SessionRecord>;
+};
 
-export interface ScanRecord {
-  id: string;
-  source: "upload" | "github";
-  projectName: string;
-  filesScanned: number;
-  createdAt: string;
-  report: DependencyReport;
-}
+const DATA_DIR = path.join(process.cwd(), ".data");
+const DATA_FILE = path.join(DATA_DIR, "purchases.json");
 
-interface DatabaseSchema {
-  scans: Record<string, ScanRecord>;
-  entitlements: Record<string, Entitlement>;
-}
+const EMPTY_DB: DataStore = {
+  stripeSessions: {},
+};
 
-const dataFilePath = path.join(process.cwd(), "data", "database.json");
-let operationQueue: Promise<void> = Promise.resolve();
+let writeQueue = Promise.resolve();
 
-function defaultDatabase(): DatabaseSchema {
-  return {
-    scans: {},
-    entitlements: {},
-  };
-}
-
-async function ensureDatabase() {
-  await mkdir(path.dirname(dataFilePath), { recursive: true });
-
+async function ensureDataFile(): Promise<void> {
+  await mkdir(DATA_DIR, { recursive: true });
   try {
-    await readFile(dataFilePath, "utf8");
+    await readFile(DATA_FILE, "utf8");
   } catch {
-    await writeFile(dataFilePath, JSON.stringify(defaultDatabase(), null, 2), "utf8");
+    await writeFile(DATA_FILE, JSON.stringify(EMPTY_DB, null, 2), "utf8");
   }
 }
 
-async function readDatabase() {
-  await ensureDatabase();
-  const content = await readFile(dataFilePath, "utf8");
-
+async function readDb(): Promise<DataStore> {
+  await ensureDataFile();
   try {
-    const parsed = JSON.parse(content) as DatabaseSchema;
+    const raw = await readFile(DATA_FILE, "utf8");
+    const parsed = JSON.parse(raw) as Partial<DataStore>;
     return {
-      scans: parsed.scans ?? {},
-      entitlements: parsed.entitlements ?? {},
+      stripeSessions: parsed.stripeSessions ?? {},
     };
   } catch {
-    return defaultDatabase();
+    return { ...EMPTY_DB };
   }
 }
 
-async function writeDatabase(database: DatabaseSchema) {
-  await writeFile(dataFilePath, JSON.stringify(database, null, 2), "utf8");
+async function writeDb(data: DataStore): Promise<void> {
+  await ensureDataFile();
+  await writeFile(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
 }
 
-function enqueueDatabaseWrite<T>(operation: () => Promise<T>): Promise<T> {
-  const run = operationQueue.then(operation, operation);
-  operationQueue = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
+function enqueueWrite(task: () => Promise<void>): Promise<void> {
+  writeQueue = writeQueue.then(task).catch(() => undefined);
+  return writeQueue;
 }
 
-export function isEntitlementActive(entitlement: Entitlement | null) {
-  if (!entitlement) {
-    return false;
-  }
-
-  if (entitlement.expiresAt && new Date(entitlement.expiresAt).getTime() < Date.now()) {
-    return false;
-  }
-
-  if (entitlement.type === "single") {
-    return (entitlement.scansRemaining ?? 0) > 0;
-  }
-
-  return true;
-}
-
-export async function getEntitlement(token: string) {
-  const database = await readDatabase();
-  return database.entitlements[token] ?? null;
-}
-
-export async function upsertEntitlement(input: {
-  token: string;
-  type: EntitlementType;
-  scansRemaining: number | null;
-  expiresAt: string | null;
-  orderId?: string;
-  customerEmail?: string;
-}) {
-  return enqueueDatabaseWrite(async () => {
-    const database = await readDatabase();
-    const previous = database.entitlements[input.token];
-    const now = new Date().toISOString();
-
-    const nextValue: Entitlement = {
-      token: input.token,
-      type: input.type,
-      scansRemaining: input.scansRemaining,
-      expiresAt: input.expiresAt,
-      orderId: input.orderId ?? previous?.orderId,
-      customerEmail: input.customerEmail ?? previous?.customerEmail,
-      createdAt: previous?.createdAt ?? now,
-      updatedAt: now,
+export async function recordCompletedStripeCheckout(params: {
+  sessionId: string;
+  email: string | null;
+  paidAt?: string;
+}): Promise<void> {
+  await enqueueWrite(async () => {
+    const db = await readDb();
+    db.stripeSessions[params.sessionId] = {
+      sessionId: params.sessionId,
+      email: params.email,
+      paidAt: params.paidAt ?? new Date().toISOString(),
     };
-
-    database.entitlements[input.token] = nextValue;
-    await writeDatabase(database);
-
-    return nextValue;
+    await writeDb(db);
   });
 }
 
-export async function consumeEntitlementScan(token: string) {
-  return enqueueDatabaseWrite(async () => {
-    const database = await readDatabase();
-    const entitlement = database.entitlements[token];
-
-    if (!isEntitlementActive(entitlement ?? null)) {
-      return null;
-    }
-
-    if (entitlement.type === "single") {
-      const scansRemaining = Math.max((entitlement.scansRemaining ?? 0) - 1, 0);
-      database.entitlements[token] = {
-        ...entitlement,
-        scansRemaining,
-        updatedAt: new Date().toISOString(),
-      };
-    } else {
-      database.entitlements[token] = {
-        ...entitlement,
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    await writeDatabase(database);
-    return database.entitlements[token];
-  });
-}
-
-export async function saveScan(input: Omit<ScanRecord, "id" | "createdAt">) {
-  return enqueueDatabaseWrite(async () => {
-    const database = await readDatabase();
-    const id = randomUUID();
-
-    const scanRecord: ScanRecord = {
-      ...input,
-      id,
-      createdAt: new Date().toISOString(),
-    };
-
-    database.scans[id] = scanRecord;
-    await writeDatabase(database);
-
-    return scanRecord;
-  });
-}
-
-export async function getScan(id: string) {
-  const database = await readDatabase();
-  return database.scans[id] ?? null;
+export async function getStripeSession(
+  sessionId: string
+): Promise<SessionRecord | null> {
+  const db = await readDb();
+  return db.stripeSessions[sessionId] ?? null;
 }

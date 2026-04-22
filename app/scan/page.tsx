@@ -1,87 +1,119 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { FileSearch } from "lucide-react";
-import { FileUpload } from "@/components/file-upload";
-import { GithubInput } from "@/components/github-input";
-import { PricingCard } from "@/components/pricing-card";
-import { PurchaseActivator } from "@/components/purchase-activator";
+
+import { FileUpload } from "@/components/FileUpload";
+import { PricingCards } from "@/components/PricingCards";
 import { Badge } from "@/components/ui/badge";
-import { getAccessContextFromCookie } from "@/lib/access";
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { hasPageAccess } from "@/lib/access";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
-  title: "Run Scan | NPM Unused Detector",
-  description: "Run dependency scans by upload or GitHub URL and get an actionable removal report.",
+  title: "Scan",
+  description:
+    "Analyze npm dependencies against real import usage and get a removal plan.",
 };
 
-export const dynamic = "force-dynamic";
+type ScanPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default async function ScanPage() {
-  const cookieStore = await cookies();
-  const access = await getAccessContextFromCookie(cookieStore.get("nud_access")?.value ?? null);
+const claimMessages: Record<string, { tone: "ok" | "warn"; text: string }> = {
+  success: {
+    tone: "ok",
+    text: "Payment confirmed. This browser is unlocked and ready to scan.",
+  },
+  not_found: {
+    tone: "warn",
+    text: "We couldn't verify that checkout session yet. Wait a few seconds and retry the claim URL.",
+  },
+  missing_session: {
+    tone: "warn",
+    text: "Missing session_id in claim URL. Update your Stripe completion URL template.",
+  },
+};
+
+export default async function ScanPage({ searchParams }: ScanPageProps) {
+  const params = searchParams ? await searchParams : {};
+  const claim = typeof params.claim === "string" ? params.claim : null;
+  const claimMessage = claim ? claimMessages[claim] : null;
+
+  const hasAccess = await hasPageAccess();
+  const paymentLink = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK;
 
   return (
-    <main className="min-h-screen bg-[#0d1117]">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10">
-        <header className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs text-slate-300">
-            <FileSearch className="size-4 text-emerald-300" />
-            <span>Dependency cleanup scanner</span>
-          </div>
-          <h1 className="text-3xl font-semibold text-slate-50">Run a package import scan</h1>
-          <p className="mt-2 max-w-3xl text-slate-300">
-            Upload `package.json` plus source files, or scan directly from GitHub. We parse every import and surface
-            removable dependencies with estimated package weight savings.
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Badge variant={access ? "default" : "muted"}>{access ? "Access unlocked" : "Purchase required"}</Badge>
-            {access?.entitlementType === "single" ? (
-              <Badge variant="muted">{access.scansRemaining ?? 0} scans remaining</Badge>
-            ) : null}
-          </div>
-          <p className="mt-3 text-sm text-slate-400">
-            Need context first? <Link className="text-emerald-300 hover:text-emerald-200" href="/">Return to overview and FAQ</Link>.
-          </p>
-        </header>
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-10 sm:px-8 lg:px-12">
+      <header className="space-y-4">
+        <Badge variant={hasAccess ? "default" : "secondary"} className="w-fit">
+          {hasAccess ? "Access unlocked" : "Access required"}
+        </Badge>
+        <h1 className="text-4xl font-bold tracking-tight">NPM Unused Detector Scanner</h1>
+        <p className="max-w-3xl text-muted">
+          Find unreferenced npm packages with AST-level import matching and remove the bloat before it
+          ships.
+        </p>
+      </header>
 
-        <PurchaseActivator />
-
-        {access ? (
-          <div className="grid gap-6 md:grid-cols-2">
-            <GithubInput enabled />
-            <FileUpload enabled />
-          </div>
-        ) : (
-          <section className="space-y-5 rounded-2xl border border-slate-800 bg-slate-950/60 p-6">
-            <h2 className="text-xl font-semibold text-slate-100">Unlock the scanner</h2>
-            <p className="text-sm text-slate-300">
-              The analysis tool is paywalled to keep scans fast and hosted reliably. Choose a plan, complete checkout,
-              then this page will automatically unlock.
+      {claimMessage ? (
+        <Card className={claimMessage.tone === "ok" ? "border-accent/40" : "border-danger/40"}>
+          <CardContent className="pt-6">
+            <p className={claimMessage.tone === "ok" ? "text-accent" : "text-danger"}>
+              {claimMessage.text}
             </p>
-            <div className="grid gap-5 md:grid-cols-2">
-              <PricingCard
-                plan="single"
-                title="Single Scan"
-                description="One project cleanup run"
-                price="$3"
-                cadence="per scan"
-                features={["AST import scan", "Dependencies + devDependencies report", "Estimated KB savings"]}
-                ctaLabel="Unlock 1 scan"
-              />
-              <PricingCard
-                plan="monthly"
-                title="Unlimited"
-                description="Continuous dependency hygiene"
-                price="$12"
-                cadence="per month"
-                features={["Unlimited scans", "GitHub + upload support", "Best fit for active repos"]}
-                ctaLabel="Unlock unlimited"
-                highlight
-              />
-            </div>
-          </section>
-        )}
-      </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {!hasAccess ? (
+        <div className="grid gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">Unlock scanner access</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm text-muted">
+              <p>
+                This feature is behind a paywall. Purchase once or subscribe, then return through your
+                completion URL to set the access cookie.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href={paymentLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={cn(buttonVariants({ size: "lg" }))}
+                >
+                  Buy with Stripe
+                </a>
+                <Link
+                  href="/"
+                  className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
+                >
+                  Back to Landing Page
+                </Link>
+              </div>
+              <p>
+                Configure Stripe Payment Link completion URL:
+                {" "}
+                <code>/api/access/claim?session_id={'{CHECKOUT_SESSION_ID}'}</code>
+              </p>
+            </CardContent>
+          </Card>
+          <PricingCards compact />
+        </div>
+      ) : (
+        <FileUpload hasAccess={hasAccess} paymentLink={paymentLink} />
+      )}
+
+      <footer className="pt-4 text-sm text-muted">
+        Need help? Check the webhook health on
+        {" "}
+        <code>/api/health</code>
+        {" "}
+        and verify checkout events are posted to
+        {" "}
+        <code>/api/webhooks/lemonsqueezy</code>.
+      </footer>
     </main>
   );
 }
